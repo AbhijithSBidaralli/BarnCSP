@@ -5,8 +5,9 @@ import argparse
 
 import numpy as np
 import pandas as pd
+from hyperopt import hp, fmin, tpe, Trials, STATUS_OK
+from hyperopt.pyll.base import scope
 
-from src.search_in_2D.tda_mapper_k_points_searcher import find_optimal_k_points_tda_2D
 from src.search_in_2D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_2D
 from src.search_in_2D.random_k_points_searcher import find_optimal_k_points_random_search_2D
 from src.search_in_2D.uniform_grid_k_points_searcher import find_optimal_k_points_uniform_grid_search_2D
@@ -24,10 +25,11 @@ from src.search_in_3D.PSO_k_points_searcher import find_optimal_k_points_pso_3D
 from src.search_in_3D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_3D
 from src.search_in_3D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_3D
 
+from utils_optimize import *
 
 APP_CONFIG = {
     "results_path": "./results",
-    "max_k_points": 20,
+    "max_k_points": 3,
     "barn_section": 3.1500001,
 }
 TDA_MAPPER_CONFIG = {
@@ -129,7 +131,7 @@ def main(args):
 
     # Calculating the average CO2 concentration inside the barn
     in_CO2_avg = np.mean(nodes_df[barn_inside.flatten().astype(bool)]["Carbon"].values)
-
+    
     if args.clusteringAlg.lower() == "tda-mapper":
         print("[Status] Starting tda-mapper k-point searcher ...")
         # Update the saving path
@@ -141,23 +143,25 @@ def main(args):
         # Search for k points in 2D
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_tda_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    barn_section=APP_CONFIG["barn_section"],
-                    cross_section=TDA_MAPPER_CONFIG["cross_section"],
-                    overlap=TDA_MAPPER_CONFIG["overlapping_portion"],
-                    lr=TDA_MAPPER_CONFIG["lr"],
-                    epochs=TDA_MAPPER_CONFIG["epochs"],
-                    sampling_budget=TDA_MAPPER_CONFIG["sampling_budget"],
-                    neighborhood_numbers=TDA_MAPPER_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
+            discrete_learning_rates = [
+                1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3
             ]
+
+            space_tda_mapper_2D = {
+                'lr': hp.choice('learning_rate', discrete_learning_rates),
+                'overlapping_portion':hp.quniform('integer_sample', 10, 90, 1)
+            }
+            trials = Trials()
+            obj = objective_tda_2d(nodes_df,barn_inside,in_CO2_avg,barn_LW_ratio,APP_CONFIG)
+            best = fmin(
+                fn=obj.objective,
+                space=space_tda_mapper_2D,
+                algo=tpe.suggest,
+                max_evals=2,  # Adjust the number of trials
+                trials=trials
+            )
+            print("Best parameters:", best)
+            results = obj.final_results
         # Search for k points in 3D
         elif args.dim.lower() == "3d":
             print("[Status] Searching k points in the whole 3D space ...")
