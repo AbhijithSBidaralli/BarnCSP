@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from hyperopt import hp, fmin, tpe, Trials, STATUS_OK
 from hyperopt.pyll.base import scope
+import dagshub
+import mlflow
 
 from src.search_in_2D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_2D
 from src.search_in_2D.random_k_points_searcher import find_optimal_k_points_random_search_2D
@@ -26,10 +28,11 @@ from src.search_in_3D.monte_carlo_k_points_searcher import find_optimal_k_points
 from src.search_in_3D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_3D
 
 from utils_optimize import *
+dagshub.init(repo_owner='AbhijithSBidaralli', repo_name='BarnCSP', mlflow=True)
 
 APP_CONFIG = {
     "results_path": "./results",
-    "max_k_points": 3,
+    "max_k_points": 20,
     "barn_section": 3.1500001,
 }
 TDA_MAPPER_CONFIG = {
@@ -143,25 +146,32 @@ def main(args):
         # Search for k points in 2D
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            discrete_learning_rates = [
-                1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3
-            ]
+            mlflow.set_experiment("tda-2d")
+            mlflow.end_run()
+            with mlflow.start_run():
+                discrete_learning_rates = [
+                    1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3
+                ]
 
-            space_tda_mapper_2D = {
-                'lr': hp.choice('learning_rate', discrete_learning_rates),
-                'overlapping_portion':hp.quniform('integer_sample', 10, 90, 1)
-            }
-            trials = Trials()
-            obj = objective_tda_2d(nodes_df,barn_inside,in_CO2_avg,barn_LW_ratio,APP_CONFIG)
-            best = fmin(
-                fn=obj.objective,
-                space=space_tda_mapper_2D,
-                algo=tpe.suggest,
-                max_evals=2,  # Adjust the number of trials
-                trials=trials
-            )
-            print("Best parameters:", best)
-            results = obj.final_results
+                space_tda_mapper_2D = {
+                    'lr': hp.choice('learning_rate', discrete_learning_rates),
+                    'overlapping_portion':hp.quniform('integer_sample', 10, 90, 1)
+                }
+                trials = Trials()
+                obj = objective_tda_2d(nodes_df,barn_inside,in_CO2_avg,barn_LW_ratio,APP_CONFIG)
+                best = fmin(
+                    fn=obj.objective,
+                    space=space_tda_mapper_2D,
+                    algo=tpe.suggest,
+                    max_evals=150,  # Adjust the number of trials
+                    trials=trials
+                )
+                print("Best parameters:", best)
+                mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('learning rate',discrete_learning_rates[best['learning_rate']])
+                mlflow.log_param('overlapping portion',best['integer_sample'])
+                mlflow.log_metric('l2_norm_loss',obj.best_results)
+                results = obj.final_results
         # Search for k points in 3D
         elif args.dim.lower() == "3d":
             print("[Status] Searching k points in the whole 3D space ...")

@@ -19,12 +19,11 @@ class objective_tda_2d():
         self.barn_LW_ratio = barn_LW_ratio
         self.APP_CONFIG = APP_CONFIG
         self.final_results = []
-        
+        self.best_results = 1e5
     
     def objective(self, space):
         self.lr = space['lr']
         self.overlap = space['overlapping_portion']
-        best_results = 1e5
         print('chosen hyperparameters')
         print(self.lr)
         print(self.overlap)
@@ -49,8 +48,8 @@ class objective_tda_2d():
         self.results=results
         l2_norm_loss = np.linalg.norm(mean_losses)
         print(l2_norm_loss)
-        if l2_norm_loss < best_results:
-            best_results = l2_norm_loss
-            print('best results loss is ',best_results)
+        if l2_norm_loss < self.best_results:
+            self.best_results = l2_norm_loss
+            print('best results loss is ',self.best_results)
             self.final_results=results
         return l2_norm_loss
