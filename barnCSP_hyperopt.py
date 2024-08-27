@@ -2,7 +2,7 @@ import os
 import json
 from tqdm import tqdm
 import argparse
-
+import torch
 import numpy as np
 import pandas as pd
 from hyperopt import hp, fmin, tpe, Trials, STATUS_OK
@@ -27,12 +27,12 @@ from src.search_in_3D.PSO_k_points_searcher import find_optimal_k_points_pso_3D
 from src.search_in_3D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_3D
 from src.search_in_3D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_3D
 
-from utils_optimize import *
+from utils_optimize_new import *
 dagshub.init(repo_owner='AbhijithSBidaralli', repo_name='BarnCSP', mlflow=True)
 
 APP_CONFIG = {
     "results_path": "./results",
-    "max_k_points": 20,
+    "max_k_points": 1,
     "barn_section": 3.1500001,
 }
 TDA_MAPPER_CONFIG = {
@@ -100,53 +100,19 @@ GENETIC_CONFIG = {
 
 def main(args):
     # Load csv barn file
-    print("[Status] Loading file ...")
-    nodes_df = pd.read_csv(args.barnFilename).drop("Unnamed: 0", axis=1)
-    nodes_df.rename(
-        columns={
-            "X [ m ]": "X",
-            " Y [ m ]": "Y",
-            " Z [ m ]": "Z",
-            " Carbon Dioxide.Mass Fraction": "Carbon",
-            " Velocity u [ m s^-1 ]": "u",
-            " Velocity v [ m s^-1 ]": "v",
-            " Velocity w [ m s^-1 ]": "w",
-        },
-        inplace=True,
-    )
-
-    # Get LW ratio from the filename
-    barn_LW_ratio = [
-        int(sub_str[-1]) for sub_str in args.barnFilename.split("_") if "LW" in sub_str
-    ][0]
-
-    # Filtering the barn interior and let out the outside
-    print("[Status] Finding the barn-inside region ...")
-    barn_inside = np.zeros((50, 100 * barn_LW_ratio, 100))
-    carbon_image = nodes_df["Carbon"].values.reshape((50, 100 * barn_LW_ratio, 100))
-    barn_inside[:20, :, :] = 1
-    for j in range(20, 50):
-        x = np.array([carbon_image[j, :, i].sum() for i in range(100)])
-        for idx, val in enumerate([x[-i] - x[-i - 1] for i in range(1, 60)]):
-            if val < -200:
-                barn_inside[j, :, (0 + idx) : (100 - idx)] = 1
-                break
-
-    # Calculating the average CO2 concentration inside the barn
-    in_CO2_avg = np.mean(nodes_df[barn_inside.flatten().astype(bool)]["Carbon"].values)
+    seed = 10
+    np.random.seed(seed)
+    torch.manual_seed(seed)
     
     if args.clusteringAlg.lower() == "tda-mapper":
         print("[Status] Starting tda-mapper k-point searcher ...")
         # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "tda-mapper"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
+     
 
         # Search for k points in 2D
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            mlflow.set_experiment("tda-2d")
+            mlflow.set_experiment("tda-2d-10")
             mlflow.end_run()
             with mlflow.start_run():
                 discrete_learning_rates = [
@@ -158,20 +124,21 @@ def main(args):
                     'overlapping_portion':hp.quniform('integer_sample', 10, 90, 1)
                 }
                 trials = Trials()
-                obj = objective_tda_2d(nodes_df,barn_inside,in_CO2_avg,barn_LW_ratio,APP_CONFIG)
+                obj = objective_tda_2d(APP_CONFIG,mlflow)
                 best = fmin(
                     fn=obj.objective,
                     space=space_tda_mapper_2D,
                     algo=tpe.suggest,
-                    max_evals=150,  # Adjust the number of trials
+                    max_evals=1,  # Adjust the number of trials
                     trials=trials
                 )
                 print("Best parameters:", best)
-                mlflow.log_param('Clustering Algorithm','TDA-Mapper')
-                mlflow.log_param('learning rate',discrete_learning_rates[best['learning_rate']])
-                mlflow.log_param('overlapping portion',best['integer_sample'])
-                mlflow.log_metric('l2_norm_loss',obj.best_results)
-                results = obj.final_results
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best learning rate',discrete_learning_rates[best['learning_rate']])
+                mlflow.log_param('best overlapping portion',best['integer_sample'])
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
+                
         # Search for k points in 3D
         elif args.dim.lower() == "3d":
             print("[Status] Searching k points in the whole 3D space ...")
@@ -192,342 +159,12 @@ def main(args):
                 for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
             ]
 
-    elif args.clusteringAlg.lower() == "kmedoids":
-        print("[Status] Starting kmedoids k-point searcher ...")
-        # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "kmedoids"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
-
-        # Search for k points in 2D
-        if args.dim.lower() == "2d":
-            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_kmedoids_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    APP_CONFIG["barn_section"],
-                    lr=KMEDOIDS_CONFIG["lr"],
-                    epochs=KMEDOIDS_CONFIG["epochs"],
-                    sampling_budget=KMEDOIDS_CONFIG["sampling_budget"],
-                    neighborhood_numbers=KMEDOIDS_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-        elif args.dim.lower() == "3d":
-            print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_kmedoids_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    lr=KMEDOIDS_CONFIG["lr"],
-                    epochs=KMEDOIDS_CONFIG["epochs"],
-                    sampling_budget=KMEDOIDS_CONFIG["sampling_budget"],
-                    neighborhood_numbers=KMEDOIDS_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-    elif args.clusteringAlg.lower() == "random":
-        print("[Status] Starting random k-point searcher ...")
-        # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "random"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
-
-        # Search for k points in 2D
-        if args.dim.lower() == "2d":
-            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_random_search_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    APP_CONFIG["barn_section"],
-                    epochs=RANDOM_CONFIG["epochs"],
-                    sampling_budget=RANDOM_CONFIG["sampling_budget"],
-                    neighborhood_numbers=RANDOM_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-        elif args.dim.lower() == "3d":
-            print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_random_search_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    epochs=RANDOM_CONFIG["epochs"],
-                    sampling_budget=RANDOM_CONFIG["sampling_budget"],
-                    neighborhood_numbers=RANDOM_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-    elif args.clusteringAlg.lower() == "uniform":
-        print("[Status] Starting uniform k-point searcher ...")
-        # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "uniform"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
-
-        # Search for k points in 2D
-        if args.dim.lower() == "2d":
-            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_uniform_grid_search_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    APP_CONFIG["barn_section"],
-                    sampling_budget=UNIFORM_GRID_CONFIG["sampling_budget"],
-                    neighborhood_numbers=UNIFORM_GRID_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-        elif args.dim.lower() == "3d":
-            print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_uniform_grid_search_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    sampling_budget=UNIFORM_GRID_CONFIG["sampling_budget"],
-                    neighborhood_numbers=UNIFORM_GRID_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-    elif args.clusteringAlg.lower() == "simulated-annealing":
-        print("[Status] Starting simmulated annealing k-point searcher ...")
-        # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "simulated_annealing"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
-
-        # Search for k points in 2D
-        if args.dim.lower() == "2d":
-            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_simulated_annealing_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    APP_CONFIG["barn_section"],
-                    sampling_budget=SIMULATED_ANNEALING_CONFIG["sampling_budget"],
-                    neighborhood_numbers=SIMULATED_ANNEALING_CONFIG["neighborhood_numbers"],
-                    epochs=SIMULATED_ANNEALING_CONFIG["epochs"],
-                    initial_temperature=SIMULATED_ANNEALING_CONFIG["initial_temperature"],
-                    cooling_rate=SIMULATED_ANNEALING_CONFIG["cooling_rate"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-        elif args.dim.lower() == "3d":
-            print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_simulated_annealing_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    sampling_budget=SIMULATED_ANNEALING_CONFIG["sampling_budget"],
-                    neighborhood_numbers=SIMULATED_ANNEALING_CONFIG["neighborhood_numbers"],
-                    epochs=SIMULATED_ANNEALING_CONFIG["epochs"],
-                    initial_temperature=SIMULATED_ANNEALING_CONFIG["initial_temperature"],
-                    cooling_rate=SIMULATED_ANNEALING_CONFIG["cooling_rate"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-    elif args.clusteringAlg.lower() == "pso":
-        print("[Status] Starting PSO k-point searcher ...")
-        # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "PSO"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
-
-        # Search for k points in 2D
-        if args.dim.lower() == "2d":
-            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_pso_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    APP_CONFIG["barn_section"],
-                    sampling_budget=PSO_CONFIG["sampling_budget"],
-                    neighborhood_numbers=PSO_CONFIG["neighborhood_numbers"],
-                    epochs=PSO_CONFIG["epochs"],
-                    c1=PSO_CONFIG["c1"],
-                    c2=PSO_CONFIG["c2"],
-                    w=PSO_CONFIG["w"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-        elif args.dim.lower() == "3d":
-            print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_pso_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    sampling_budget=SIMULATED_ANNEALING_CONFIG["sampling_budget"],
-                    neighborhood_numbers=SIMULATED_ANNEALING_CONFIG["neighborhood_numbers"],
-                    epochs=SIMULATED_ANNEALING_CONFIG["epochs"],
-                    c1=PSO_CONFIG["c1"],
-                    c2=PSO_CONFIG["c2"],
-                    w=PSO_CONFIG["w"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-    elif args.clusteringAlg.lower() == "monte-carlo":
-        print("[Status] Starting Monte-Carlo k-point searcher ...")
-        # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "Monte-Carlo"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
-
-        # Search for k points in 2D
-        if args.dim.lower() == "2d":
-            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_monte_carlo_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    APP_CONFIG["barn_section"],
-                    sampling_budget=MONTE_CARLO_CONFIG["sampling_budget"],
-                    neighborhood_numbers=MONTE_CARLO_CONFIG["neighborhood_numbers"],
-                    max_epochs=MONTE_CARLO_CONFIG["max_epochs"],
-                    convergence_threshold=MONTE_CARLO_CONFIG["convergence_threshold"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-        elif args.dim.lower() == "3d":
-            print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_monte_carlo_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    sampling_budget=MONTE_CARLO_CONFIG["sampling_budget"],
-                    neighborhood_numbers=MONTE_CARLO_CONFIG["neighborhood_numbers"],
-                    max_epochs=MONTE_CARLO_CONFIG["max_epochs"],
-                    convergence_threshold=MONTE_CARLO_CONFIG["convergence_threshold"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-    elif args.clusteringAlg.lower() == "genetic":
-        print("[Status] Starting genetic k-point searcher ...")
-        # Update the saving path
-        APP_CONFIG["results_path"] = os.path.join(
-            os.path.join(APP_CONFIG["results_path"], "genetic"),
-            args.barnFilename.split("/")[-1].split(".")[0],
-        )
-
-        # Search for k points in 2D
-        if args.dim.lower() == "2d":
-            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            results = [
-                find_optimal_k_points_advanced_genetic_algorithm_2D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    APP_CONFIG["barn_section"],
-                    sampling_budget=GENETIC_CONFIG["sampling_budget"],
-                    neighborhood_numbers=GENETIC_CONFIG["neighborhood_numbers"],
-                    population_size=GENETIC_CONFIG["population_size"],
-                    episodes=GENETIC_CONFIG["episodes"],
-                    mutation_rate=GENETIC_CONFIG["mutation_rate"],
-                    crossover_rate=GENETIC_CONFIG["crossover_rate"],
-                    tournament_size=GENETIC_CONFIG["tournament_size"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-        elif args.dim.lower() == "3d":
-            print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_advanced_genetic_algorithm_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    sampling_budget=GENETIC_CONFIG["sampling_budget"],
-                    neighborhood_numbers=GENETIC_CONFIG["neighborhood_numbers"],
-                    population_size=GENETIC_CONFIG["population_size"],
-                    episodes=GENETIC_CONFIG["episodes"],
-                    mutation_rate=GENETIC_CONFIG["mutation_rate"],
-                    crossover_rate=GENETIC_CONFIG["crossover_rate"],
-                    tournament_size=GENETIC_CONFIG["tournament_size"],
-                    barn_LW_ratio=barn_LW_ratio,
-                )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
-
-    # Prepare a dictionary for saving into a json file
-    res_summary = {}
-    for i in range(len(results)):
-        if results[i] is not None:
-            res_summary[f"{i+1}-point"] = {}
-            res_summary[f"{i+1}-point"]["Min Loss"] = float(
-                results[i][0].detach().numpy() if "torch" in str(type(results[i][0])) else float(results[i][0])
-            )
-            res_summary[f"{i+1}-point"]["Mean Loss"] = results[i][1]
-            res_summary[f"{i+1}-point"]["Std Loss"] = results[i][2]
-            res_summary[f"{i+1}-point"][f"{i+1} Points' Position"] = [
-                [l for l in j] for j in results[i][3]
-            ]
-
-    print("[Status] Saving ...")
-    try:
-        if args.clusteringAlg == "tda-mapper":
-            with open(APP_CONFIG["results_path"] + "_" + args.dim.lower() + TDA_MAPPER_CONFIG['cross_section'] + ".json", "w") as fp:
-                json.dump(res_summary, fp)
-        else:
-            with open(APP_CONFIG["results_path"] + "_" + args.dim.lower() + ".json", "w") as fp:
-                json.dump(res_summary, fp)
-    except OSError:
-        os.mkdir("/".join(APP_CONFIG["results_path"].split("/")[:-1]))
-        if args.clusteringAlg == "tda-mapper":
-            with open(APP_CONFIG["results_path"] + "_" + args.dim.lower() + TDA_MAPPER_CONFIG['cross_section'] + ".json", "w") as fp:
-                json.dump(res_summary, fp)
-        else:
-            with open(APP_CONFIG["results_path"] + "_" + args.dim.lower() + ".json", "w") as fp:
-                json.dump(res_summary, fp)
+   
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Do the k-point conditional sampling.")
-    parser.add_argument("barnFilename", type=str, help="the csv file of the barn")
+    #parser.add_argument("barnFilename", type=str, help="the csv file of the barn")
     parser.add_argument(
         "-c",
         "--clusteringAlg",
