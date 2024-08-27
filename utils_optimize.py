@@ -6,8 +6,7 @@ import pandas as pd
 import os
 import json
 from joblib import parallel_config,Parallel, delayed
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import Array
+
 TDA_MAPPER_CONFIG = {
     "cross_section": "Z",
     "overlapping_portion": 75,  # %
@@ -124,10 +123,8 @@ class objective_tda_2d():
             self.mlflow.log_param('overlapping portion',self.overlap)
             # Get a list of all files in the directory
             all_files = os.listdir(directory)
-
             # Filter only the .csv files
             Files = [file for file in all_files if 'mix' in file.lower()]
-            #Files = [r'C:\Users\ALIAS\Data\Yplane_LW2_Open_Mix_15-0_0-97_0deg.csv',r'C:\Users\ALIAS\Data\Yplane_LW2_Open_Mix_10-0_0-85_45deg.csv']
             mean_losses=[]
             with parallel_config(backend='loky', n_jobs=40):              
                    combine_results = Parallel()(delayed(self.process_file)(i,directory,mean_losses) for i in Files)  
@@ -141,6 +138,5 @@ class objective_tda_2d():
             self.mlflow.log_artifact('res_summary.json')
             if l2_norm_loss < self.best_results:
                 self.best_results = l2_norm_loss
-                #print('best results loss is ',self.best_results)
                 self.best_trial = name
             return l2_norm_loss
