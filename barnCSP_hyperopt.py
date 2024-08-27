@@ -32,7 +32,7 @@ dagshub.init(repo_owner='AbhijithSBidaralli', repo_name='BarnCSP', mlflow=True)
 
 APP_CONFIG = {
     "results_path": "./results",
-    "max_k_points": 1,
+    "max_k_points": 2,
     "barn_section": 3.1500001,
 }
 TDA_MAPPER_CONFIG = {
@@ -112,7 +112,7 @@ def main(args):
         # Search for k points in 2D
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            mlflow.set_experiment("tda-2d-10")
+            mlflow.set_experiment("tda-2d-Concurrent")
             mlflow.end_run()
             with mlflow.start_run():
                 discrete_learning_rates = [
@@ -129,7 +129,7 @@ def main(args):
                     fn=obj.objective,
                     space=space_tda_mapper_2D,
                     algo=tpe.suggest,
-                    max_evals=1,  # Adjust the number of trials
+                    max_evals=2,  # Adjust the number of trials
                     trials=trials
                 )
                 print("Best parameters:", best)

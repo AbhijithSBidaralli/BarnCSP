@@ -5,6 +5,9 @@ import torch
 import pandas as pd
 import os
 import json
+from joblib import parallel_config,Parallel, delayed
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Array
 TDA_MAPPER_CONFIG = {
     "cross_section": "Z",
     "overlapping_portion": 75,  # %
@@ -14,6 +17,8 @@ TDA_MAPPER_CONFIG = {
     "sampling_budget": 10000,
     "neighborhood_numbers": 5,
 }
+
+
 class objective_tda_2d():
     def __init__(self,APP_CONFIG,mlflow):
         self.nodes_df = 0
@@ -26,25 +31,9 @@ class objective_tda_2d():
         self.mlflow = mlflow
         self.count=1
         self.best_trial=''
-    def objective(self, space):
-        name='TDA-2d-trial-{}'.format(self.count)
-        self.count+=1
-        with self.mlflow.start_run(run_name = name,nested=True):
-            self.lr = space['lr']
-            self.overlap = space['overlapping_portion']
-            directory = r'C:\Users\ALIAS\Data_new'
-            self.mlflow.log_param('learning rate',self.lr)
-            self.mlflow.log_param('overlapping portion',self.overlap)
-            # Get a list of all files in the directory
-            all_files = os.listdir(directory)
 
-            # Filter only the .csv files
-            Files = [file for file in all_files if 'mix' in file.lower()]
-            print(len(Files))
-            #Files = [r'C:\Users\ALIAS\Data\Yplane_LW2_Open_Mix_15-0_0-97_0deg.csv',r'C:\Users\ALIAS\Data\Yplane_LW2_Open_Mix_10-0_0-85_45deg.csv']
-            mean_losses=[]
-            for barnFilename in Files:
-                with self.mlflow.start_run(nested=True):
+    def process_file(self,barnFilename,directory,mean_losses):
+         
                     print("[Status] Loading file ...")
                     self.APP_CONFIG["results_path"] = os.path.join(
                     os.path.join(self.APP_CONFIG["results_path"], "tda-mapper"),
@@ -90,9 +79,6 @@ class objective_tda_2d():
                     self.in_CO2_avg = in_CO2_avg
                     self.barn_LW_ratio = barn_LW_ratio
                     self.final_results = []
-                    print('chosen hyperparameters')
-                    print(self.lr)
-                    print(self.overlap)
 
                     results = [
                                     find_optimal_k_points_tda_2D(
@@ -125,15 +111,34 @@ class objective_tda_2d():
                             res_summary[f"{i+1}-point"][f"{i+1} Points' Position"] = [
                                 [l for l in j] for j in results[i][3]
                             ]
-                    self.mlflow.log_param('file',barnFilename)
-                    self.mlflow.log_param('learning rate',self.lr)
-                    self.mlflow.log_param('overlapping portion',self.overlap)
-                    self.mlflow.log_param('parent',name)
-                    with open('res_summary.json', "w") as f:
-                        json.dump(res_summary, f)
-                    self.mlflow.log_artifact('res_summary.json')
+                    res_summary['file']=barnFilename
+                    return mean_losses, res_summary
+    def objective(self, space):
+        name='TDA-2d-trial-{}'.format(self.count)
+        self.count+=1
+        with self.mlflow.start_run(run_name = name,nested=True):
+            self.lr = space['lr']
+            self.overlap = space['overlapping_portion']
+            directory = r'C:\Users\ALIAS\Data_new'
+            self.mlflow.log_param('learning rate',self.lr)
+            self.mlflow.log_param('overlapping portion',self.overlap)
+            # Get a list of all files in the directory
+            all_files = os.listdir(directory)
+
+            # Filter only the .csv files
+            Files = [file for file in all_files if 'mix' in file.lower()]
+            #Files = [r'C:\Users\ALIAS\Data\Yplane_LW2_Open_Mix_15-0_0-97_0deg.csv',r'C:\Users\ALIAS\Data\Yplane_LW2_Open_Mix_10-0_0-85_45deg.csv']
+            mean_losses=[]
+            with parallel_config(backend='loky', n_jobs=40):              
+                   combine_results = Parallel()(delayed(self.process_file)(i,directory,mean_losses) for i in Files)  
+            mean_results, res_summary_results = zip(*combine_results)
+            mean_losses = np.array(mean_results).flatten()
+            res_summary_results = list(res_summary_results)
+            with open('res_summary.json', "w") as f:
+                json.dump(res_summary_results, f, indent=4)
             l2_norm_loss = np.linalg.norm(mean_losses)
             self.mlflow.log_metric('l2_norm_loss',l2_norm_loss)
+            self.mlflow.log_artifact('res_summary.json')
             if l2_norm_loss < self.best_results:
                 self.best_results = l2_norm_loss
                 #print('best results loss is ',self.best_results)
