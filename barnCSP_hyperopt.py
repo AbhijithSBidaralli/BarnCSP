@@ -27,12 +27,13 @@ from src.search_in_3D.PSO_k_points_searcher import find_optimal_k_points_pso_3D
 from src.search_in_3D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_3D
 from src.search_in_3D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_3D
 
-from utils_optimize_new import *
+from datetime import datetime
+from utils_optimize import *
 dagshub.init(repo_owner='AbhijithSBidaralli', repo_name='BarnCSP', mlflow=True)
 
 APP_CONFIG = {
     "results_path": "./results",
-    "max_k_points": 2,
+    "max_k_points": 20,
     "barn_section": 3.1500001,
 }
 TDA_MAPPER_CONFIG = {
@@ -112,9 +113,12 @@ def main(args):
         # Search for k points in 2D
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+            now = datetime.now()
             mlflow.set_experiment("tda-2d-Concurrent")
             mlflow.end_run()
             with mlflow.start_run():
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
                 discrete_learning_rates = [
                     1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3
                 ]
@@ -129,7 +133,7 @@ def main(args):
                     fn=obj.objective,
                     space=space_tda_mapper_2D,
                     algo=tpe.suggest,
-                    max_evals=2,  # Adjust the number of trials
+                    max_evals=10,  # Adjust the number of trials
                     trials=trials
                 )
                 print("Best parameters:", best)
