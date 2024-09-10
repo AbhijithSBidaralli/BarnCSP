@@ -36,15 +36,6 @@ APP_CONFIG = {
     "max_k_points": 20,
     "barn_section": 3.1500001,
 }
-TDA_MAPPER_CONFIG = {
-    "cross_section": "Z",
-    "overlapping_portion": 75,  # %
-    "lr": 5e-7,
-    "epochs": 20,
-    ## For sensitivity analysis
-    "sampling_budget": 10000,
-    "neighborhood_numbers": 5,
-}
 KMEDOIDS_CONFIG = {
     "lr": 5e-7,
     "epochs": 20,
@@ -114,9 +105,9 @@ def main(args):
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
             now = datetime.now()
-            mlflow.set_experiment("tda-2d-Concurrent")
+            mlflow.set_experiment("tda-2D-Concurrent")
             mlflow.end_run()
-            with mlflow.start_run():
+            with mlflow.start_run(run_name='tda-2D-{}-Cross-Section'.format(args.sec.upper())):
                 start_date = now.strftime("%Y-%m-%d %H:%M:%S")
                 mlflow.set_tag("start_date", start_date)
                 discrete_learning_rates = [
@@ -128,12 +119,13 @@ def main(args):
                     'overlapping_portion':hp.quniform('integer_sample', 10, 90, 1)
                 }
                 trials = Trials()
-                obj = objective_tda_2d(APP_CONFIG,mlflow)
+                obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
+                obj.dimension = '2D'
                 best = fmin(
                     fn=obj.objective,
                     space=space_tda_mapper_2D,
                     algo=tpe.suggest,
-                    max_evals=10,  # Adjust the number of trials
+                    max_evals=125,  # Adjust the number of trials
                     trials=trials
                 )
                 print("Best parameters:", best)
@@ -146,22 +138,36 @@ def main(args):
         # Search for k points in 3D
         elif args.dim.lower() == "3d":
             print("[Status] Searching k points in the whole 3D space ...")
-            results = [
-                find_optimal_k_points_tda_3D(
-                    nodes_df,
-                    barn_inside,
-                    i,
-                    in_CO2_avg,
-                    cross_section=TDA_MAPPER_CONFIG["cross_section"],
-                    overlap=TDA_MAPPER_CONFIG["overlapping_portion"],
-                    lr=TDA_MAPPER_CONFIG["lr"],
-                    epochs=TDA_MAPPER_CONFIG["epochs"],
-                    sampling_budget=TDA_MAPPER_CONFIG["sampling_budget"],
-                    neighborhood_numbers=TDA_MAPPER_CONFIG["neighborhood_numbers"],
-                    barn_LW_ratio=barn_LW_ratio,
+            now = datetime.now()
+            mlflow.set_experiment("tda-2D-Concurrent")
+            mlflow.end_run()
+            with mlflow.start_run(run_name='tda-3D-{}-Cross-Section'.format(args.sec.upper())):
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
+                discrete_learning_rates = [
+                    1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3
+                ]
+
+                space_tda_mapper_3D = {
+                    'lr': hp.choice('learning_rate', discrete_learning_rates),
+                    'overlapping_portion':hp.quniform('integer_sample', 10, 90, 1)
+                }
+                trials = Trials()
+                obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
+                obj.dimension = '3D'
+                best = fmin(
+                    fn=obj.objective,
+                    space=space_tda_mapper_3D,
+                    algo=tpe.suggest,
+                    max_evals=125,  # Adjust the number of trials
+                    trials=trials
                 )
-                for i in tqdm(range(1, APP_CONFIG["max_k_points"] + 1))
-            ]
+                print("Best parameters:", best)
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best learning rate',discrete_learning_rates[best['learning_rate']])
+                mlflow.log_param('best overlapping portion',best['integer_sample'])
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
 
    
 
@@ -182,6 +188,14 @@ if __name__ == "__main__":
         type=str,
         default="2D",
         help="choose among 2D/3D",
+    )
+
+    parser.add_argument(
+        "-s",
+        "--sec",
+        type=str,
+        default="Z",
+        help="choose among Z/X/Y",
     )
 
     args = parser.parse_args()

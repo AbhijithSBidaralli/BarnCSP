@@ -1,4 +1,5 @@
-from src.search_in_2D.tda_mapper_k_points_searcher import find_optimal_k_points_tda_2D 
+from src.search_in_2D.tda_mapper_k_points_searcher import find_optimal_k_points_tda_2D
+from src.search_in_3D.tda_mapper_k_points_searcher import find_optimal_k_points_tda_3D
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -19,7 +20,7 @@ TDA_MAPPER_CONFIG = {
 
 
 class objective_tda_2d():
-    def __init__(self,APP_CONFIG,mlflow):
+    def __init__(self,APP_CONFIG,mlflow,section):
         self.nodes_df = 0
         self.barn_inside = 0
         self.in_CO2_avg = 0
@@ -30,6 +31,8 @@ class objective_tda_2d():
         self.mlflow = mlflow
         self.count=1
         self.best_trial=''
+        self.dimension = ''
+        self.cross_section = section
 
     def process_file(self,barnFilename,directory,mean_losses):
          
@@ -38,6 +41,7 @@ class objective_tda_2d():
                     os.path.join(self.APP_CONFIG["results_path"], "tda-mapper"),
                     barnFilename.split("/")[-1].split(".")[0],
         )
+                    TDA_MAPPER_CONFIG['cross_section']=self.cross_section
                     file_path = os.path.join(directory, barnFilename)
                     nodes_df = pd.read_csv(file_path).drop("Unnamed: 0", axis=1)
                     nodes_df.rename(
@@ -72,30 +76,49 @@ class objective_tda_2d():
 
                     # Calculating the average CO2 concentration inside the barn
                     in_CO2_avg = np.mean(nodes_df[barn_inside.flatten().astype(bool)]["Carbon"].values)
-
-                    self.nodes_df = nodes_df
+                    '''self.nodes_df = nodes_df
                     self.barn_inside = barn_inside
                     self.in_CO2_avg = in_CO2_avg
-                    self.barn_LW_ratio = barn_LW_ratio
+                    self.barn_LW_ratio = barn_LW_ratio'''
                     self.final_results = []
-
-                    results = [
-                                    find_optimal_k_points_tda_2D(
-                                        self.nodes_df,
-                                        self.barn_inside,
-                                        i,
-                                        self.in_CO2_avg,
-                                        barn_section=self.APP_CONFIG["barn_section"],
-                                        cross_section=TDA_MAPPER_CONFIG["cross_section"],
-                                        overlap=self.overlap,
-                                        lr=self.lr,
-                                        epochs=TDA_MAPPER_CONFIG["epochs"],
-                                        sampling_budget=TDA_MAPPER_CONFIG["sampling_budget"],
-                                        neighborhood_numbers=TDA_MAPPER_CONFIG["neighborhood_numbers"],
-                                        barn_LW_ratio=self.barn_LW_ratio,
-                                    )
-                                    for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
-                                ]
+                    if self.dimension == '2D':
+                        results = [
+                                        find_optimal_k_points_tda_2D(
+                                            nodes_df,
+                                            barn_inside,
+                                            i,
+                                            in_CO2_avg,
+                                            barn_section=self.APP_CONFIG["barn_section"],
+                                            cross_section=TDA_MAPPER_CONFIG["cross_section"],
+                                            overlap=self.overlap,
+                                            lr=self.lr,
+                                            epochs=TDA_MAPPER_CONFIG["epochs"],
+                                            sampling_budget=TDA_MAPPER_CONFIG["sampling_budget"],
+                                            neighborhood_numbers=TDA_MAPPER_CONFIG["neighborhood_numbers"],
+                                            barn_LW_ratio=barn_LW_ratio,
+                                        )
+                                        for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                                    ]
+                    elif self.dimension== '3D':
+                         results = [
+                                            find_optimal_k_points_tda_3D(
+                                            nodes_df,
+                                            barn_inside,
+                                            i,
+                                            in_CO2_avg,
+                                            cross_section=TDA_MAPPER_CONFIG["cross_section"],
+                                            overlap=self.overlap,
+                                            lr=self.lr,
+                                            epochs=TDA_MAPPER_CONFIG["epochs"],
+                                            sampling_budget=TDA_MAPPER_CONFIG["sampling_budget"],
+                                            neighborhood_numbers=TDA_MAPPER_CONFIG["neighborhood_numbers"],
+                                            barn_LW_ratio=barn_LW_ratio,
+                                        )
+                                        for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                                    ]
+                    #print(results)
+                    if None in results:
+                         results = [(0,1e5,0,np.array([])) if x is None else x for x in results]
                     mean_losses.extend([t[1] for t in results])
                 
                     res_summary = {}
@@ -113,7 +136,7 @@ class objective_tda_2d():
                     res_summary['file']=barnFilename
                     return mean_losses, res_summary
     def objective(self, space):
-        name='TDA-2d-trial-{}'.format(self.count)
+        name='TDA-{}-trial-{}'.format(self.dimension,self.count)
         self.count+=1
         with self.mlflow.start_run(run_name = name,nested=True):
             self.lr = space['lr']
@@ -126,7 +149,7 @@ class objective_tda_2d():
             # Filter only the .csv files
             Files = [file for file in all_files if 'mix' in file.lower()]
             mean_losses=[]
-            with parallel_config(backend='loky', n_jobs=40):              
+            with parallel_config(backend='loky', n_jobs=15):              
                    combine_results = Parallel()(delayed(self.process_file)(i,directory,mean_losses) for i in Files)  
             mean_results, res_summary_results = zip(*combine_results)
             mean_losses = np.array(mean_results).flatten()
