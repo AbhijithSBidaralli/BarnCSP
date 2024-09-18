@@ -61,8 +61,8 @@ def get_neighbors_2D(x, y, width, height, n):
             nx, ny = x + dx, y + dy
             if 0 <= nx < width and 0 <= ny < height:
                 neighbors.append((nx, ny))
+                count += 1
 
-            count += 1
             if count > n:
                 break
 
@@ -83,8 +83,8 @@ def get_neighbors_3D(x, y, z, width, height, depth, n):
                 nx, ny, nz = x + dx, y + dy, z + dz
                 if 0 <= nx < width and 0 <= ny < height and 0 <= nz < depth:
                     neighbors.append((nx, ny, nz))
+                    count += 1
 
-                count += 1
                 if count > n:
                     break
 
