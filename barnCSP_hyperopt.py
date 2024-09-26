@@ -36,13 +36,6 @@ APP_CONFIG = {
     "max_k_points": 20,
     "barn_section": 3.1500001,
 }
-KMEDOIDS_CONFIG = {
-    "lr": 5e-7,
-    "epochs": 20,
-    ## For sensitivity analysis
-    "sampling_budget": 10000,
-    "neighborhood_numbers": 5,
-}
 RANDOM_CONFIG = {
     "epochs": 20,
     ## For sensitivity analysis
@@ -105,7 +98,7 @@ def main(args):
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
             now = datetime.now()
-            mlflow.set_experiment("tda-2D-Concurrent")
+            mlflow.set_experiment("tda-2D-3D-Concurrent")
             mlflow.end_run()
             with mlflow.start_run(run_name='tda-2D-{}-Cross-Section'.format(args.sec.upper())):
                 start_date = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -166,6 +159,33 @@ def main(args):
                 #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
                 mlflow.log_param('best learning rate',discrete_learning_rates[best['learning_rate']])
                 mlflow.log_param('best overlapping portion',best['integer_sample'])
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
+
+    elif args.clusteringAlg.lower() == "kmedoids":
+        print("[Status] Starting kmedoids k-point searcher ...")
+        # Update the saving path
+     
+
+        # Search for k points in 2D
+        if args.dim.lower() == "2d":
+            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+            now = datetime.now()
+            mlflow.set_experiment("kmedoids-2D-3D-Concurrent")
+            mlflow.end_run()
+            with mlflow.start_run(run_name='kmedoids-2D'):
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
+                discrete_learning_rates = [
+                    1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3
+                ]
+
+                obj = objective_kmedoids(APP_CONFIG,mlflow)
+                obj.dimension = '2D'
+                for lr in discrete_learning_rates:
+                    obj.objective(lr)
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best learning rate',obj.best_lr)
                 mlflow.log_param('best trial',obj.best_trial)
                 mlflow.log_metric('best l2_norm_loss',obj.best_results)
 
