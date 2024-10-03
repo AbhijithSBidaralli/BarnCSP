@@ -11,7 +11,6 @@ import dagshub
 import mlflow
 
 from src.search_in_2D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_2D
-from src.search_in_2D.random_k_points_searcher import find_optimal_k_points_random_search_2D
 from src.search_in_2D.uniform_grid_k_points_searcher import find_optimal_k_points_uniform_grid_search_2D
 from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_2D
 from src.search_in_2D.PSO_k_points_searcher import find_optimal_k_points_pso_2D
@@ -36,25 +35,13 @@ APP_CONFIG = {
     "max_k_points": 20,
     "barn_section": 3.1500001,
 }
-RANDOM_CONFIG = {
-    "epochs": 20,
-    ## For sensitivity analysis
-    "sampling_budget": 10000,
-    "neighborhood_numbers": 5,
-}
+
 UNIFORM_GRID_CONFIG = {
     ## For sensitivity analysis
     "sampling_budget": 10000,
     "neighborhood_numbers": 5,
 }
-SIMULATED_ANNEALING_CONFIG = {
-    "epochs": 20,
-    "initial_temperature": 100,
-    "cooling_rate": 0.995,
-    ## For sensitivity analysis
-    "sampling_budget": 10000,
-    "neighborhood_numbers": 5,
-}
+
 PSO_CONFIG = {
     "epochs": 20,
     "num_particles": 20,
@@ -98,7 +85,7 @@ def main(args):
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
             now = datetime.now()
-            mlflow.set_experiment("tda-2D-3D-Concurrent")
+            mlflow.set_experiment("tda-2D-Concurrent")
             mlflow.end_run()
             with mlflow.start_run(run_name='tda-2D-{}-Cross-Section'.format(args.sec.upper())):
                 start_date = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -114,6 +101,7 @@ def main(args):
                 trials = Trials()
                 obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
                 obj.dimension = '2D'
+                obj.algorithm = 'tda-wrapper'
                 best = fmin(
                     fn=obj.objective,
                     space=space_tda_mapper_2D,
@@ -148,6 +136,7 @@ def main(args):
                 trials = Trials()
                 obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
                 obj.dimension = '3D'
+                obj.algorithm = 'tda-wrapper'
                 best = fmin(
                     fn=obj.objective,
                     space=space_tda_mapper_3D,
@@ -171,7 +160,7 @@ def main(args):
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
             now = datetime.now()
-            mlflow.set_experiment("kmedoids-2D-3D-Concurrent")
+            mlflow.set_experiment("tda-2D-Concurrent")
             mlflow.end_run()
             with mlflow.start_run(run_name='kmedoids-2D'):
                 start_date = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -180,18 +169,80 @@ def main(args):
                     1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3
                 ]
 
-                obj = objective_kmedoids(APP_CONFIG,mlflow)
+                obj = objective_tda_2d(APP_CONFIG,mlflow,None)
                 obj.dimension = '2D'
+                obj.algorithm = 'kmedoids'
+                
                 for lr in discrete_learning_rates:
-                    obj.objective(lr)
+                    space = {}
+                    space['lr']=lr
+                    obj.objective(space)
                 #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
                 mlflow.log_param('best learning rate',obj.best_lr)
                 mlflow.log_param('best trial',obj.best_trial)
                 mlflow.log_metric('best l2_norm_loss',obj.best_results)
 
-   
+    elif args.clusteringAlg.lower() == "random":
+        print("[Status] Starting random k-point searcher ...")
 
+        if args.dim.lower() == "2d":
+            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+            now = datetime.now()
+            mlflow.set_experiment("random-2D-3D-Concurrent")
+            mlflow.end_run()
+            with mlflow.start_run(run_name='random-2D'):
+                    print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+                    start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                    mlflow.set_tag("start_date", start_date)
+                    discrete_epochs = np.arange(5,51,5)
 
+                    obj = objective_tda_2d(APP_CONFIG,mlflow,None)
+                    obj.dimension = '2D'
+                    obj.algorithm = 'random'
+                    
+                    for epoch in discrete_epochs:
+                        space = {}
+                        space['epochs']=epoch
+                        obj.objective(space)
+                    #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                    mlflow.log_param('best epoch',obj.best_epoch)
+                    mlflow.log_param('best trial',obj.best_trial)
+                    mlflow.log_metric('best l2_norm_loss',obj.best_results)
+
+    elif args.clusteringAlg.lower() == "simulated-annealing":
+        print("[Status] Starting simmulated annealing k-point searcher ...")
+        if args.dim.lower() == "2d":
+            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+            now = datetime.now()
+            mlflow.set_experiment("simulated-Annealing-2D-3D-Concurrent")
+            mlflow.end_run()
+            with mlflow.start_run(run_name='simAneal-2D'):
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
+                values = np.arange(0.8,1.005,0.005)
+                space_simulated_annealing = {
+                    'epochs': hp.quniform('epochs', 5, 50, 5),
+                    'temperature':hp.quniform('temperature', 50, 200, 10),
+                    'cooling_rate':hp.choice('cooling_rate',values)
+                }
+                trials = Trials()
+                obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
+                obj.dimension = '2D'
+                obj.algorithm = 'simulated_annealing'
+                best = fmin(
+                    fn=obj.objective,
+                    space=space_simulated_annealing,
+                    algo=tpe.suggest,
+                    max_evals=200,  # Adjust the number of trials
+                    trials=trials
+                )
+                print("Best parameters:", best)
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best epoch',best['epochs'])
+                mlflow.log_param('best temperature',best['temperature'])
+                mlflow.log_param('best cooling_rate',best['cooling_rate'])
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Do the k-point conditional sampling.")
     #parser.add_argument("barnFilename", type=str, help="the csv file of the barn")
