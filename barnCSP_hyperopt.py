@@ -13,8 +13,6 @@ import mlflow
 from src.search_in_2D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_2D
 from src.search_in_2D.uniform_grid_k_points_searcher import find_optimal_k_points_uniform_grid_search_2D
 from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_2D
-from src.search_in_2D.PSO_k_points_searcher import find_optimal_k_points_pso_2D
-from src.search_in_2D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_2D
 from src.search_in_2D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_2D
 
 from src.search_in_3D.tda_mapper_k_points_searcher import find_optimal_k_points_tda_3D
@@ -42,23 +40,6 @@ UNIFORM_GRID_CONFIG = {
     "neighborhood_numbers": 5,
 }
 
-PSO_CONFIG = {
-    "epochs": 20,
-    "num_particles": 20,
-    "c1": 1.5,
-    "c2": 1.5,
-    "w": 0.7,
-    ## For sensitivity analysis
-    "sampling_budget": 10000,
-    "neighborhood_numbers": 5,
-}
-MONTE_CARLO_CONFIG = {
-    "max_epochs": 20,
-    "convergence_threshold": 1e-7,
-    ## For sensitivity analysis
-    "sampling_budget": 10000,
-    "neighborhood_numbers": 5,
-}
 GENETIC_CONFIG = {
     "population_size": 100,
     "episodes": 20,
@@ -241,6 +222,81 @@ def main(args):
                 mlflow.log_param('best epoch',best['epochs'])
                 mlflow.log_param('best temperature',best['temperature'])
                 mlflow.log_param('best cooling_rate',best['cooling_rate'])
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
+    
+    elif args.clusteringAlg.lower() == "pso":
+        print("[Status] Starting PSO k-point searcher ...")
+        if args.dim.lower() == "2d":
+            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+            now = datetime.now()
+            mlflow.set_experiment("pso-2D-3D-Concurrent")
+            mlflow.end_run()
+            with mlflow.start_run(run_name='pso-2D'):
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
+                c1_values = np.arange(0.5,5.10,0.1)
+                c2_values = np.arange(0.5,5.10,0.1)
+                w_values = np.arange(0.1,0.905,0.05)
+                space_pso = {
+                    'epochs': hp.quniform('epochs', 5, 50, 5),
+                    'num_particles':hp.quniform('num_particles', 5, 100, 5),
+                    'c1':hp.choice('c1',c1_values),
+                    'c2':hp.choice('c2',c2_values),
+                    'w': hp.choice('w',w_values)
+                }
+                trials = Trials()
+                obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
+                obj.dimension = '2D'
+                obj.algorithm = 'PSO'
+                best = fmin(
+                    fn=obj.objective,
+                    space=space_pso,
+                    algo=tpe.suggest,
+                    max_evals=300,  # Adjust the number of trials
+                    trials=trials
+                )
+                print("Best parameters:", best)
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best epoch',best['epochs'])
+                mlflow.log_param('best num_particles',best['num_particles'])
+                mlflow.log_param('best c1',best['c1'])
+                mlflow.log_param('best c2',best['c2'])
+                mlflow.log_param('best w',best['w'])
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
+    elif args.clusteringAlg.lower() == "monte-carlo":
+        print("[Status] Starting Monte-Carlo k-point searcher ...")
+        if args.dim.lower() == "2d":
+            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+            now = datetime.now()
+            mlflow.set_experiment("monteCarlo-2D-3D-Concurrent")
+            mlflow.end_run()
+            with mlflow.start_run(run_name='monte-2D'):
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
+                discrete_convergence_thresh = [
+                    1e-9,5e-9, 1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6, 1e-5
+                ]
+                space_monte = {
+                    'epochs': hp.quniform('epochs', 5, 50, 5),
+                    'convergence_threshold':hp.choice('convergence_threshold', discrete_convergence_thresh)
+                }
+                trials = Trials()
+                obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
+                obj.dimension = '2D'
+                obj.algorithm = 'Monte-Carlo'
+                best = fmin(
+                    fn=obj.objective,
+                    space=space_monte,
+                    algo=tpe.suggest,
+                    max_evals=200,  # Adjust the number of trials
+                    trials=trials
+                )
+                print("Best parameters:", best)
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best epoch',best['epochs'])
+                mlflow.log_param('best convergence_threshold',discrete_convergence_thresh[best['convergence_threshold']])
                 mlflow.log_param('best trial',obj.best_trial)
                 mlflow.log_metric('best l2_norm_loss',obj.best_results)
 if __name__ == "__main__":

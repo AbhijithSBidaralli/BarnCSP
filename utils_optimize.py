@@ -4,6 +4,8 @@ from src.search_in_2D.kmedoids_k_points_searcher import find_optimal_k_points_km
 from src.search_in_3D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_3D
 from src.search_in_2D.random_k_points_searcher import find_optimal_k_points_random_search_2D
 from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_2D
+from src.search_in_2D.PSO_k_points_searcher import find_optimal_k_points_pso_2D
+from src.search_in_2D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_2D
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -41,6 +43,25 @@ SIMULATED_ANNEALING_CONFIG = {
     "epochs": 20,
     "initial_temperature": 100,
     "cooling_rate": 0.995,
+    ## For sensitivity analysis
+    "sampling_budget": 10000,
+    "neighborhood_numbers": 5,
+}
+
+PSO_CONFIG = {
+    "epochs": 20,
+    "num_particles": 20,
+    "c1": 1.5,
+    "c2": 1.5,
+    "w": 0.7,
+    ## For sensitivity analysis
+    "sampling_budget": 10000,
+    "neighborhood_numbers": 5,
+}
+
+MONTE_CARLO_CONFIG = {
+    "max_epochs": 20,
+    "convergence_threshold": 1e-7,
     ## For sensitivity analysis
     "sampling_budget": 10000,
     "neighborhood_numbers": 5,
@@ -160,7 +181,44 @@ class objective_tda_2d():
                                             barn_LW_ratio=barn_LW_ratio,
                                         )
                                         for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
-                            ]    
+                            ]
+          elif self.algorithm == 'PSO':
+                 if self.dimension == '2D':
+                       PSO_CONFIG["num_particles"] = self.num_particles
+                       results = [
+                                    find_optimal_k_points_pso_2D(
+                                        nodes_df,
+                                        barn_inside,
+                                        i,
+                                        in_CO2_avg,
+                                        self.APP_CONFIG["barn_section"],
+                                        sampling_budget=PSO_CONFIG["sampling_budget"],
+                                        neighborhood_numbers=PSO_CONFIG["neighborhood_numbers"],
+                                        epochs=int(self.epochs),
+                                        c1=self.c1,
+                                        c2=self.c2,
+                                        w=self.w,
+                                        barn_LW_ratio=barn_LW_ratio,
+                                    )
+                                    for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                            ]
+          elif self.algorithm == 'Monte-Carlo':
+                 if self.dimension == '2D':
+                        results = [
+                                    find_optimal_k_points_monte_carlo_2D(
+                                        nodes_df,
+                                        barn_inside,
+                                        i,
+                                        in_CO2_avg,
+                                        self.APP_CONFIG["barn_section"],
+                                        sampling_budget=MONTE_CARLO_CONFIG["sampling_budget"],
+                                        neighborhood_numbers=MONTE_CARLO_CONFIG["neighborhood_numbers"],
+                                        max_epochs=int(self.epochs),
+                                        convergence_threshold=self.convergence_threshold,
+                                        barn_LW_ratio=barn_LW_ratio,
+                                    )
+                                    for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                                ]   
           return results
     def process_file(self,barnFilename,directory,mean_losses):
          
@@ -235,7 +293,7 @@ class objective_tda_2d():
                     res_summary['file']=barnFilename
                     return mean_losses, res_summary
     def objective(self, space):
-        algo_dict = {'tda-wrapper':'TDA','kmedoids':'KM','random':'RND','simulated_annealing':'SA'}
+        algo_dict = {'tda-wrapper':'TDA','kmedoids':'KM','random':'RND','simulated_annealing':'SA','PSO':'PSO','Monte-Carlo':'MC'}
         name='{}-{}-trial-{}'.format(algo_dict[self.algorithm],self.dimension,self.count)
         self.count+=1
         with self.mlflow.start_run(run_name = name,nested=True):
@@ -257,6 +315,22 @@ class objective_tda_2d():
                 self.mlflow.log_param('epochs',int(self.epochs))
                 self.mlflow.log_param('temperature',int(self.temperature))
                 self.mlflow.log_param('cooling_rate',self.cooling_rate)
+            elif self.algorithm=='PSO':
+                self.epochs = space['epochs']
+                self.num_particles = space['num_particles']
+                self.c1 = float(f"{space['c1']:.2f}")
+                self.c2 = float(f"{space['c2']:.2f}")
+                self.w = space['w']
+                self.mlflow.log_param('epochs',int(self.epochs))
+                self.mlflow.log_param('num_particles',int(self.num_particles))
+                self.mlflow.log_param('c1',self.c1)
+                self.mlflow.log_param('c2',self.c2)
+                self.mlflow.log_param('w',self.w)
+            elif self.algorithm=='Monte-Carlo':
+                self.epochs = space['epochs']
+                self.convergence_threshold = space['convergence_threshold']
+                self.mlflow.log_param('epochs',int(self.epochs))
+                self.mlflow.log_param('convergence_threshold',self.convergence_threshold)
             directory = r'C:\Users\ALIAS\Data_new'
             # Get a list of all files in the directory
             all_files = os.listdir(directory)
