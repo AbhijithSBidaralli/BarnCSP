@@ -13,7 +13,7 @@ import mlflow
 from src.search_in_2D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_2D
 from src.search_in_2D.uniform_grid_k_points_searcher import find_optimal_k_points_uniform_grid_search_2D
 from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_2D
-from src.search_in_2D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_2D
+
 
 from src.search_in_3D.tda_mapper_k_points_searcher import find_optimal_k_points_tda_3D
 from src.search_in_3D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_3D
@@ -40,16 +40,6 @@ UNIFORM_GRID_CONFIG = {
     "neighborhood_numbers": 5,
 }
 
-GENETIC_CONFIG = {
-    "population_size": 100,
-    "episodes": 20,
-    "mutation_rate": 0.1,
-    "crossover_rate": 0.8,
-    "tournament_size": 5,
-    ## For sensitivity analysis
-    "sampling_budget": 10000,
-    "neighborhood_numbers": 5,
-}
 
 def main(args):
     # Load csv barn file
@@ -297,6 +287,50 @@ def main(args):
                 #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
                 mlflow.log_param('best epoch',best['epochs'])
                 mlflow.log_param('best convergence_threshold',discrete_convergence_thresh[best['convergence_threshold']])
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
+    elif args.clusteringAlg.lower() == "genetic":
+        print("[Status] Starting genetic k-point searcher ...")
+        if args.dim.lower() == "2d":
+            print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
+            now = datetime.now()
+            mlflow.set_experiment("genetic-2D-3D-Concurrent")
+            mlflow.end_run()
+            with mlflow.start_run(run_name='genetic-2D'):
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
+                '''"population_size": 100,
+                    "episodes": 20,
+                    "mutation_rate": 0.1,
+                    "crossover_rate": 0.8,
+                    "tournament_size": 5,'''
+                mutation_rate = np.arange(0.1,1.0,0.05)
+                crossover_rate = np.arange(0.1,1.0,0.05)
+                space_genetic = {
+                    'population_size': hp.quniform('population_size', 50, 200, 10),
+                    'episodes': hp.quniform('episodes', 5, 50, 5),
+                    'mutation_rate':hp.choice('mutation_rate', mutation_rate),
+                    'crossover_rate':hp.choice('crossover_rate', crossover_rate),
+                    'tournament_size': hp.quniform('tournament_size', 1, 10, 1)
+                }
+                trials = Trials()
+                obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
+                obj.dimension = '2D'
+                obj.algorithm = 'genetic'
+                best = fmin(
+                    fn=obj.objective,
+                    space=space_genetic,
+                    algo=tpe.suggest,
+                    max_evals=300,  # Adjust the number of trials
+                    trials=trials
+                )
+                print("Best parameters:", best)
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best population_size',best['population_size'])
+                mlflow.log_param('best episodes',best['episodes'])
+                mlflow.log_param('best mutation_rate',mutation_rate[best['mutation_rate']])
+                mlflow.log_param('best crossover_rate',crossover_rate[best['crossover_rate']])
+                mlflow.log_param('best tournament_size',best['tournament_size'])
                 mlflow.log_param('best trial',obj.best_trial)
                 mlflow.log_metric('best l2_norm_loss',obj.best_results)
 if __name__ == "__main__":

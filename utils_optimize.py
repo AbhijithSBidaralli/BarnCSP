@@ -6,6 +6,7 @@ from src.search_in_2D.random_k_points_searcher import find_optimal_k_points_rand
 from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_2D
 from src.search_in_2D.PSO_k_points_searcher import find_optimal_k_points_pso_2D
 from src.search_in_2D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_2D
+from src.search_in_2D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_2D
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -66,6 +67,18 @@ MONTE_CARLO_CONFIG = {
     "sampling_budget": 10000,
     "neighborhood_numbers": 5,
 }
+
+GENETIC_CONFIG = {
+    "population_size": 100,
+    "episodes": 20,
+    "mutation_rate": 0.1,
+    "crossover_rate": 0.8,
+    "tournament_size": 5,
+    ## For sensitivity analysis
+    "sampling_budget": 10000,
+    "neighborhood_numbers": 5,
+}
+
 
 class objective_tda_2d():
     def __init__(self,APP_CONFIG,mlflow,section):
@@ -218,7 +231,27 @@ class objective_tda_2d():
                                         barn_LW_ratio=barn_LW_ratio,
                                     )
                                     for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
-                                ]   
+                                ] 
+          elif self.algorithm == 'genetic':
+                if self.dimension == '2D':
+                      results = [
+                                    find_optimal_k_points_advanced_genetic_algorithm_2D(
+                                        nodes_df,
+                                        barn_inside,
+                                        i,
+                                        in_CO2_avg,
+                                        self.APP_CONFIG["barn_section"],
+                                        sampling_budget=GENETIC_CONFIG["sampling_budget"],
+                                        neighborhood_numbers=GENETIC_CONFIG["neighborhood_numbers"],
+                                        population_size=int(self.population_size),
+                                        episodes=int(self.episodes),
+                                        mutation_rate=self.mutation_rate,
+                                        crossover_rate=self.crossover_rate,
+                                        tournament_size=int(self.tournament_size),
+                                        barn_LW_ratio=barn_LW_ratio,
+                                    )
+                                    for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                                ]  
           return results
     def process_file(self,barnFilename,directory,mean_losses):
          
@@ -293,7 +326,7 @@ class objective_tda_2d():
                     res_summary['file']=barnFilename
                     return mean_losses, res_summary
     def objective(self, space):
-        algo_dict = {'tda-wrapper':'TDA','kmedoids':'KM','random':'RND','simulated_annealing':'SA','PSO':'PSO','Monte-Carlo':'MC'}
+        algo_dict = {'tda-wrapper':'TDA','kmedoids':'KM','random':'RND','simulated_annealing':'SA','PSO':'PSO','Monte-Carlo':'MC','genetic':'GEN'}
         name='{}-{}-trial-{}'.format(algo_dict[self.algorithm],self.dimension,self.count)
         self.count+=1
         with self.mlflow.start_run(run_name = name,nested=True):
@@ -331,6 +364,17 @@ class objective_tda_2d():
                 self.convergence_threshold = space['convergence_threshold']
                 self.mlflow.log_param('epochs',int(self.epochs))
                 self.mlflow.log_param('convergence_threshold',self.convergence_threshold)
+            elif self.algorithm=='genetic':
+                self.population_size = space['population_size']
+                self.episodes = space['episodes']
+                self.mutation_rate = space['mutation_rate']
+                self.crossover_rate = space['crossover_rate']
+                self.tournament_size = space['tournament_size']
+                self.mlflow.log_param('population_size',int(self.population_size))
+                self.mlflow.log_param('episodes',int(self.episodes))
+                self.mlflow.log_param('mutation_rate',self.mutation_rate)
+                self.mlflow.log_param('crossover_rate',self.crossover_rate)
+                self.mlflow.log_param('tournament_size',int(self.tournament_size))
             directory = r'C:\Users\ALIAS\Data_new'
             # Get a list of all files in the directory
             all_files = os.listdir(directory)
