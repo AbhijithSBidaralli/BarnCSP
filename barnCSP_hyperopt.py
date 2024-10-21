@@ -17,7 +17,6 @@ from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_
 
 from src.search_in_3D.tda_mapper_k_points_searcher import find_optimal_k_points_tda_3D
 from src.search_in_3D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_3D
-from src.search_in_3D.random_k_points_searcher import find_optimal_k_points_random_search_3D
 from src.search_in_3D.uniform_grid_k_points_searcher import find_optimal_k_points_uniform_grid_search_3D
 from src.search_in_3D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_3D
 from src.search_in_3D.PSO_k_points_searcher import find_optimal_k_points_pso_3D
@@ -158,27 +157,28 @@ def main(args):
 
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-            now = datetime.now()
-            mlflow.set_experiment("random-2D-3D-Concurrent")
-            mlflow.end_run()
-            with mlflow.start_run(run_name='random-2D'):
-                    print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
-                    start_date = now.strftime("%Y-%m-%d %H:%M:%S")
-                    mlflow.set_tag("start_date", start_date)
-                    discrete_epochs = np.arange(5,51,5)
+        elif args.dim.lower()=='3d':
+            print("[Status] Searching k points in the whole 3D space ...")
+        now = datetime.now()
+        mlflow.set_experiment("random-2D-3D-Concurrent")
+        mlflow.end_run()
+        with mlflow.start_run(run_name='random-{}'.format(args.dim.upper())):
+                start_date = now.strftime("%Y-%m-%d %H:%M:%S")
+                mlflow.set_tag("start_date", start_date)
+                discrete_epochs = np.arange(5,51,5)
 
-                    obj = objective_tda_2d(APP_CONFIG,mlflow,None)
-                    obj.dimension = '2D'
-                    obj.algorithm = 'random'
-                    
-                    for epoch in discrete_epochs:
-                        space = {}
-                        space['epochs']=epoch
-                        obj.objective(space)
-                    #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
-                    mlflow.log_param('best epoch',obj.best_epoch)
-                    mlflow.log_param('best trial',obj.best_trial)
-                    mlflow.log_metric('best l2_norm_loss',obj.best_results)
+                obj = objective_tda_2d(APP_CONFIG,mlflow,None)
+                obj.dimension = args.dim.upper()
+                obj.algorithm = 'random'
+                
+                for epoch in discrete_epochs:
+                    space = {}
+                    space['epochs']=epoch
+                    obj.objective(space)
+                #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
+                mlflow.log_param('best epoch',obj.best_epoch)
+                mlflow.log_param('best trial',obj.best_trial)
+                mlflow.log_metric('best l2_norm_loss',obj.best_results)
 
     elif args.clusteringAlg.lower() == "simulated-annealing":
         print("[Status] Starting simmulated annealing k-point searcher ...")

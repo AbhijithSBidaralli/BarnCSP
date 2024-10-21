@@ -7,6 +7,8 @@ from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_
 from src.search_in_2D.PSO_k_points_searcher import find_optimal_k_points_pso_2D
 from src.search_in_2D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_2D
 from src.search_in_2D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_2D
+
+from src.search_in_3D.random_k_points_searcher import find_optimal_k_points_random_search_3D
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -176,6 +178,20 @@ class objective_tda_2d():
                                         barn_LW_ratio=barn_LW_ratio,
                                     )
                                     for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                            ]
+                 elif self.dimension == '3D':
+                    results = [
+                                        find_optimal_k_points_random_search_3D(
+                                            nodes_df,
+                                            barn_inside,
+                                            i,
+                                            in_CO2_avg,
+                                            epochs=self.epochs,
+                                            sampling_budget=RANDOM_CONFIG["sampling_budget"],
+                                            neighborhood_numbers=RANDOM_CONFIG["neighborhood_numbers"],
+                                            barn_LW_ratio=barn_LW_ratio,
+                                        )
+                                        for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
                             ]
           elif self.algorithm == 'simulated_annealing':
                  if self.dimension == '2D':
