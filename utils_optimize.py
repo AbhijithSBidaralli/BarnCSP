@@ -9,6 +9,9 @@ from src.search_in_2D.monte_carlo_k_points_searcher import find_optimal_k_points
 from src.search_in_2D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_2D
 
 from src.search_in_3D.random_k_points_searcher import find_optimal_k_points_random_search_3D
+from src.search_in_3D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_3D
+from src.search_in_3D.PSO_k_points_searcher import find_optimal_k_points_pso_3D
+from src.search_in_3D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_3D
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -211,9 +214,25 @@ class objective_tda_2d():
                                         )
                                         for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
                             ]
+                 if self.dimension == '3D':
+                    results = [
+                                        find_optimal_k_points_simulated_annealing_3D(
+                                            nodes_df,
+                                            barn_inside,
+                                            i,
+                                            in_CO2_avg,
+                                            sampling_budget=SIMULATED_ANNEALING_CONFIG["sampling_budget"],
+                                            neighborhood_numbers=SIMULATED_ANNEALING_CONFIG["neighborhood_numbers"],
+                                            epochs=int(self.epochs),
+                                            initial_temperature=int(self.temperature),
+                                            cooling_rate=self.cooling_rate,
+                                            barn_LW_ratio=barn_LW_ratio,
+                                        )
+                                        for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                            ]
           elif self.algorithm == 'PSO':
+                 PSO_CONFIG["num_particles"] = self.num_particles
                  if self.dimension == '2D':
-                       PSO_CONFIG["num_particles"] = self.num_particles
                        results = [
                                     find_optimal_k_points_pso_2D(
                                         nodes_df,
@@ -231,6 +250,23 @@ class objective_tda_2d():
                                     )
                                     for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
                             ]
+                 if self.dimension == '3D':
+                       results = [
+                                    find_optimal_k_points_pso_3D(
+                                        nodes_df,
+                                        barn_inside,
+                                        i,
+                                        in_CO2_avg,
+                                        sampling_budget=PSO_CONFIG["sampling_budget"],
+                                        neighborhood_numbers=PSO_CONFIG["neighborhood_numbers"],
+                                        epochs=int(self.epochs),
+                                        c1=self.c1,
+                                        c2=self.c2,
+                                        w=self.w,
+                                        barn_LW_ratio=barn_LW_ratio,
+                                    )
+                                    for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                                ]  
           elif self.algorithm == 'Monte-Carlo':
                  if self.dimension == '2D':
                         results = [
@@ -247,7 +283,22 @@ class objective_tda_2d():
                                         barn_LW_ratio=barn_LW_ratio,
                                     )
                                     for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
-                                ] 
+                                ]
+                 if self.dimension == '3D':
+                        results = [
+                                    find_optimal_k_points_monte_carlo_3D(
+                                        nodes_df,
+                                        barn_inside,
+                                        i,
+                                        in_CO2_avg,
+                                        sampling_budget=MONTE_CARLO_CONFIG["sampling_budget"],
+                                        neighborhood_numbers=MONTE_CARLO_CONFIG["neighborhood_numbers"],
+                                        max_epochs=int(self.epochs),
+                                        convergence_threshold=self.convergence_threshold,
+                                        barn_LW_ratio=barn_LW_ratio,
+                                    )
+                                    for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                            ] 
           elif self.algorithm == 'genetic':
                 if self.dimension == '2D':
                       results = [
