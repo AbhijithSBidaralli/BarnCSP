@@ -12,6 +12,7 @@ from src.search_in_3D.random_k_points_searcher import find_optimal_k_points_rand
 from src.search_in_3D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_3D
 from src.search_in_3D.PSO_k_points_searcher import find_optimal_k_points_pso_3D
 from src.search_in_3D.monte_carlo_k_points_searcher import find_optimal_k_points_monte_carlo_3D
+from src.search_in_3D.genetic_k_points_searcher import find_optimal_k_points_advanced_genetic_algorithm_3D
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -318,7 +319,25 @@ class objective_tda_2d():
                                         barn_LW_ratio=barn_LW_ratio,
                                     )
                                     for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
-                                ]  
+                                ]
+                if self.dimension == '3D':
+                      results = [
+                                    find_optimal_k_points_advanced_genetic_algorithm_3D(
+                                        nodes_df,
+                                        barn_inside,
+                                        i,
+                                        in_CO2_avg,
+                                        sampling_budget=GENETIC_CONFIG["sampling_budget"],
+                                        neighborhood_numbers=GENETIC_CONFIG["neighborhood_numbers"],
+                                        population_size=int(self.population_size),
+                                        episodes=int(self.episodes),
+                                        mutation_rate=self.mutation_rate,
+                                        crossover_rate=self.crossover_rate,
+                                        tournament_size=int(self.tournament_size),
+                                        barn_LW_ratio=barn_LW_ratio,
+                                    )
+                                    for i in tqdm(range(1, self.APP_CONFIG["max_k_points"] + 1))
+                                ]
           return results
     def process_file(self,barnFilename,directory,mean_losses):
          
