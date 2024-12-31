@@ -9,7 +9,9 @@ from hyperopt import hp, fmin, tpe, Trials, STATUS_OK
 from hyperopt.pyll.base import scope
 import dagshub
 import mlflow
-
+import pickle
+import dill
+import os
 from src.search_in_2D.kmedoids_k_points_searcher import find_optimal_k_points_kmedoids_2D
 from src.search_in_2D.uniform_grid_k_points_searcher import find_optimal_k_points_uniform_grid_search_2D
 from src.search_in_2D.simulated_annealing_k_points_searcher import find_optimal_k_points_simulated_annealing_2D
@@ -21,11 +23,11 @@ from src.search_in_3D.uniform_grid_k_points_searcher import find_optimal_k_point
 
 from datetime import datetime
 from utils_optimize import *
-dagshub.init(repo_owner='AbhijithSBidaralli', repo_name='BarnCSP', mlflow=True)
-
+#dagshub.init(repo_owner='AbhijithSBidaralli', repo_name='BarnCSP', mlflow=True)
+mlflow.set_tracking_uri('https://dagshub.com/AbhijithSBidaralli/BarnCSP.mlflow')
 APP_CONFIG = {
     "results_path": "./results",
-    "max_k_points": 20,
+    "max_k_points": 1,
     "barn_section": 3.1500001,
 }
 
@@ -101,15 +103,35 @@ def main(args):
                 }
                 trials = Trials()
                 obj = objective_tda_2d(APP_CONFIG,mlflow,args.sec.upper())
+
+                #Trying loading
+                if args.checkpoint.lower()=='y':
+                    filename='hyperopt_trials.pkl'
+                    with open(filename, 'rb') as f:
+                        trials = pickle.load(f)
+                    filename='hyperopt_obj.pkl'
+                    with open(filename, 'rb') as f:
+                        obj = pickle.load(f)
+                    print('Best trial so far:',obj.best_trial)
+
                 obj.dimension = '3D'
                 obj.algorithm = 'tda-wrapper'
                 best = fmin(
                     fn=obj.objective,
                     space=space_tda_mapper_3D,
                     algo=tpe.suggest,
-                    max_evals=125,  # Adjust the number of trials
+                    max_evals=3,  # Adjust the number of trials
                     trials=trials
                 )
+
+                #hyperopt trial saving
+                filename='hyperopt_trials.pkl'
+                with open(filename, 'wb') as f:
+                    pickle.dump(trials, f)
+                filename='hyperopt_obj.pkl'
+                with open(filename, 'wb') as f:
+                    dill.dump(obj, f)
+
                 print("Best parameters:", best)
                 #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
                 mlflow.log_param('best learning rate',discrete_learning_rates[best['learning_rate']])
@@ -183,7 +205,7 @@ def main(args):
         elif args.dim.lower()=='3d':
             print("[Status] Searching k points in the whole 3D space ...")
         now = datetime.now()
-        mlflow.set_experiment("simulated-Annealing-2D-3D-Concurrent")
+        mlflow.set_experiment("tda-2D-Concurrent")
         mlflow.end_run()
         with mlflow.start_run(run_name='simAneal-{}'.format(args.dim.upper())):
             start_date = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -205,11 +227,12 @@ def main(args):
                 max_evals=200,  # Adjust the number of trials
                 trials=trials
             )
+
             print("Best parameters:", best)
             #mlflow.log_param('Clustering Algorithm','TDA-Mapper')
             mlflow.log_param('best epoch',best['epochs'])
             mlflow.log_param('best temperature',best['temperature'])
-            mlflow.log_param('best cooling_rate',best['cooling_rate'])
+            mlflow.log_param('best cooling_rate',values[best['cooling_rate']])
             mlflow.log_param('best trial',obj.best_trial)
             mlflow.log_metric('best l2_norm_loss',obj.best_results)
     
@@ -361,6 +384,13 @@ if __name__ == "__main__":
         type=str,
         default="Z",
         help="choose among Z/X/Y",
+    )
+
+    parser.add_argument(
+        "-ch",
+        "--checkpoint",
+        type=str,
+        default='N',
     )
 
     args = parser.parse_args()

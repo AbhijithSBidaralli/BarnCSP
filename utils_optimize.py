@@ -90,7 +90,7 @@ class objective_tda_2d():
     def __init__(self,APP_CONFIG,mlflow,section):
         self.APP_CONFIG = APP_CONFIG
         self.final_results = []
-        self.best_results = 1e5
+        self.best_results = 1e12
         self.mlflow = mlflow
         self.count=1
         self.best_trial=''
