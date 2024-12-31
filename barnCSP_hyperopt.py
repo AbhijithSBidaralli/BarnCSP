@@ -53,7 +53,7 @@ def main(args):
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
             now = datetime.now()
-            mlflow.set_experiment("tda-2D-Concurrent")
+            mlflow.set_experiment("tda-2D-3D-Concurrent")
             mlflow.end_run()
             with mlflow.start_run(run_name='tda-2D-{}-Cross-Section'.format(args.sec.upper())):
                 start_date = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -88,7 +88,7 @@ def main(args):
         elif args.dim.lower() == "3d":
             print("[Status] Searching k points in the whole 3D space ...")
             now = datetime.now()
-            mlflow.set_experiment("tda-2D-Concurrent")
+            mlflow.set_experiment("tda-2D-3D-Concurrent")
             mlflow.end_run()
             with mlflow.start_run(run_name='tda-3D-{}-Cross-Section'.format(args.sec.upper())):
                 start_date = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -148,7 +148,7 @@ def main(args):
         if args.dim.lower() == "2d":
             print(f"[Status] Searching k points in 2D at height {APP_CONFIG['barn_section']} ...")
             now = datetime.now()
-            mlflow.set_experiment("tda-2D-Concurrent")
+            mlflow.set_experiment("kmedoids-2D-3D-Concurrent")
             mlflow.end_run()
             with mlflow.start_run(run_name='kmedoids-2D'):
                 start_date = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -205,7 +205,7 @@ def main(args):
         elif args.dim.lower()=='3d':
             print("[Status] Searching k points in the whole 3D space ...")
         now = datetime.now()
-        mlflow.set_experiment("tda-2D-Concurrent")
+        mlflow.set_experiment("simulated-Annealing-2D-3D-Concurrent")
         mlflow.end_run()
         with mlflow.start_run(run_name='simAneal-{}'.format(args.dim.upper())):
             start_date = now.strftime("%Y-%m-%d %H:%M:%S")
